@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="vi">
+  <head>
+    <meta charset="utf-8" />
+    <title>Countdown Peek</title>
+    <link rel="stylesheet" href="popup.css" />
+  </head>
+  <body>
+    <header>
+      <div>
+        <h1>Countdown Peek</h1>
+        <div id="host" class="muted">—</div>
+      </div>
+      <span id="pill" class="pill">OFF</span>
+    </header>
+
+    <div id="unsupported" class="notice" hidden>Không hỗ trợ trang này (chỉ http/https/file).</div>
+
+    <main id="main">
+      <section class="clock">
+        <div class="muted small">Giờ trên trang</div>
+        <div id="pageClock" class="big">—</div>
+      </section>
+
+      <div class="seg" role="tablist">
+        <button id="tabAbs" class="active" data-mode="absolute">Nhảy tới mốc</button>
+        <button id="tabOff" data-mode="offset">Cộng thêm</button>
+      </div>
+
+      <section id="panelAbs">
+        <div class="row">
+          <input id="target" type="datetime-local" step="1" />
+          <label class="check"><input id="utc" type="checkbox" /> UTC</label>
+        </div>
+        <div class="chips">
+          <button id="detect" class="chip accent" title="Đọc số Days/Hours/Minutes/Seconds trên trang">Dò countdown</button>
+          <button class="chip" data-add="0">Bây giờ</button>
+          <button class="chip" data-add="60000">+1 phút</button>
+          <button class="chip" data-add="3600000">+1 giờ</button>
+          <button class="chip" data-add="86400000">+1 ngày</button>
+          <button class="chip" data-add="604800000">+7 ngày</button>
+        </div>
+        <div id="detectMsg" class="small muted"></div>
+        <p class="hint">Mỗi lần tải trang, đồng hồ bắt đầu từ mốc này rồi chạy tiếp.</p>
+      </section>
+
+      <section id="panelOff" hidden>
+        <div class="row three">
+          <label>Ngày<input id="offD" type="number" value="0" /></label>
+          <label>Giờ<input id="offH" type="number" value="0" /></label>
+          <label>Phút<input id="offM" type="number" value="0" /></label>
+        </div>
+        <p class="hint">Giờ trên trang = giờ thật + khoảng này (có thể nhập số âm).</p>
+      </section>
+
+      <label class="check"><input id="freeze" type="checkbox" /> Đóng băng thời gian (không chạy tiếp)</label>
+      <label class="check"><input id="reload" type="checkbox" checked /> Tải lại trang sau khi áp dụng</label>
+
+      <div class="actions">
+        <button id="apply" class="primary">Áp dụng</button>
+        <button id="disable" class="secondary">Tắt</button>
+      </div>
+      <div id="msg" class="small"></div>
+    </main>
+
+    <section id="sitesBox">
+      <div class="small muted">Site đang bật</div>
+      <ul id="sites"></ul>
+    </section>
+
+    <script src="popup.js"></script>
+  </body>
+</html>
