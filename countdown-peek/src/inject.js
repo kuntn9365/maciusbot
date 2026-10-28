@@ -1,7 +1,8 @@
 // Runs in the page's MAIN world at document_start, before any page script.
-// Replaces Date (and friends) with a clock shifted to the configured time.
-// Config is read synchronously from localStorage (mirrored there by bridge.js
-// and the popup) so the very first Date.now() the page calls is already fake.
+// Registered (by registry.js) only for enabled hosts. Replaces Date (and
+// friends) with a clock shifted to the configured time. Config is read
+// synchronously from localStorage (mirrored there by bridge.js and the popup)
+// so the very first Date.now() the page calls is already fake.
 (() => {
   'use strict';
 
@@ -15,26 +16,41 @@
   const NativeDate = Date;
   const nativeNow = NativeDate.now;
 
+  // Same rule as bridge.js: config belongs to the top-level page's host.
+  const topHost = (() => {
+    if (window === window.top) return location.hostname;
+    const ao = location.ancestorOrigins;
+    if (ao && ao.length) {
+      try {
+        return new URL(ao[ao.length - 1]).hostname;
+      } catch {}
+    }
+    try {
+      return window.top.location.hostname;
+    } catch {
+      return location.hostname;
+    }
+  })();
+
   let enabled = false;
-  let freeze = false;
   let startReal = 0;
   let startFake = 0;
   let installed = false;
 
   function now() {
-    if (!enabled) return nativeNow();
-    return freeze ? startFake : startFake + (nativeNow() - startReal);
+    return enabled ? startFake + (nativeNow() - startReal) : nativeNow();
   }
 
   function apply(cfg) {
-    if (!cfg || !cfg.enabled) {
+    // The localStorage copy is per origin and same-site frames share it, so
+    // only trust a config written for this page's top-level host.
+    if (!cfg || !cfg.enabled || cfg.host !== topHost) {
       enabled = false;
       return;
     }
     const real = nativeNow();
     startReal = real;
     startFake = cfg.mode === 'offset' ? real + Number(cfg.offset || 0) : Number(cfg.target);
-    freeze = !!cfg.freeze;
     enabled = Number.isFinite(startFake);
     if (enabled) install();
   }
@@ -58,6 +74,10 @@
     disguise(toString, fnToString);
     Function.prototype.toString = toString;
 
+    const getterOf = (obj, name) => Object.getOwnPropertyDescriptor(obj, name).get;
+    const method = (obj, name, fn) =>
+      Object.defineProperty(obj, name, { value: fn, writable: true, enumerable: false, configurable: true });
+
     // --- Date -------------------------------------------------------------
     function FakeDate(...args) {
       if (!new.target) return NativeDate.prototype.toString.call(new NativeDate(now()));
@@ -73,15 +93,10 @@
         return Math.floor(now());
       },
     };
-    FakeDate.now = disguise(statics.now, nativeNow);
-    FakeDate.parse = NativeDate.parse;
-    FakeDate.UTC = NativeDate.UTC;
-    Object.defineProperty(NativeDate.prototype, 'constructor', {
-      value: FakeDate,
-      writable: true,
-      enumerable: false,
-      configurable: true,
-    });
+    method(FakeDate, 'now', disguise(statics.now, nativeNow));
+    method(FakeDate, 'parse', NativeDate.parse);
+    method(FakeDate, 'UTC', NativeDate.UTC);
+    method(NativeDate.prototype, 'constructor', FakeDate);
     disguise(FakeDate, NativeDate);
     window.Date = FakeDate;
 
@@ -91,7 +106,7 @@
     if (formatDesc && formatDesc.get) {
       const origGet = formatDesc.get;
       const cache = new WeakMap();
-      const getter = Object.getOwnPropertyDescriptor(
+      const getter = getterOf(
         {
           get format() {
             if (!cache.has(this)) {
@@ -102,22 +117,22 @@
           },
         },
         'format',
-      ).get;
-      Object.defineProperty(DTF, 'format', {
-        configurable: true,
-        enumerable: false,
-        get: disguise(getter, origGet),
-      });
+      );
+      Object.defineProperty(DTF, 'format', { ...formatDesc, get: disguise(getter, origGet) });
     }
     const origFormatToParts = DTF.formatToParts;
     if (origFormatToParts) {
-      DTF.formatToParts = disguise(
-        {
-          formatToParts(date) {
-            return origFormatToParts.call(this, date === undefined ? now() : date);
-          },
-        }.formatToParts,
-        origFormatToParts,
+      method(
+        DTF,
+        'formatToParts',
+        disguise(
+          {
+            formatToParts(date) {
+              return origFormatToParts.call(this, date === undefined ? now() : date);
+            },
+          }.formatToParts,
+          origFormatToParts,
+        ),
       );
     }
 
@@ -125,7 +140,7 @@
     const originDesc = Object.getOwnPropertyDescriptor(Performance.prototype, 'timeOrigin');
     if (originDesc && originDesc.get) {
       const origOrigin = originDesc.get;
-      const getter = Object.getOwnPropertyDescriptor(
+      const getter = getterOf(
         {
           get timeOrigin() {
             const v = origOrigin.call(this);
@@ -133,47 +148,123 @@
           },
         },
         'timeOrigin',
-      ).get;
+      );
       Object.defineProperty(Performance.prototype, 'timeOrigin', { ...originDesc, get: disguise(getter, origOrigin) });
     }
 
     // --- Server time read from the HTTP "Date" response header -------------
+    // Only headers of real responses are shifted (fetch Response#headers and
+    // XHR), never Headers objects the page builds itself.
     const shiftHttpDate = (v) => {
       if (!enabled || v == null) return v;
       const t = NativeDate.parse(v);
       return Number.isNaN(t) ? v : new NativeDate(t + (now() - nativeNow())).toUTCString();
     };
     const isDate = (name) => String(name).toLowerCase() === 'date';
-    const origHeadersGet = Headers.prototype.get;
-    Headers.prototype.get = disguise(
-      {
-        get(name) {
-          const v = origHeadersGet.call(this, name);
-          return isDate(name) ? shiftHttpDate(v) : v;
+    const responseHeaders = new WeakSet();
+    const shifts = (headers) => enabled && responseHeaders.has(headers);
+
+    const respDesc = Object.getOwnPropertyDescriptor(Response.prototype, 'headers');
+    if (respDesc && respDesc.get) {
+      const origHeaders = respDesc.get;
+      const getter = getterOf(
+        {
+          get headers() {
+            const h = origHeaders.call(this);
+            if (h) responseHeaders.add(h);
+            return h;
+          },
         },
-      }.get,
-      origHeadersGet,
+        'headers',
+      );
+      Object.defineProperty(Response.prototype, 'headers', { ...respDesc, get: disguise(getter, origHeaders) });
+    }
+
+    const HP = Headers.prototype;
+    const origGet = HP.get;
+    const origEntries = HP.entries;
+    const origValues = HP.values;
+    const origForEach = HP.forEach;
+    method(
+      HP,
+      'get',
+      disguise(
+        {
+          get(name) {
+            const v = origGet.call(this, name);
+            return isDate(name) && shifts(this) ? shiftHttpDate(v) : v;
+          },
+        }.get,
+        origGet,
+      ),
     );
+    const entries = disguise(
+      {
+        *entries() {
+          const it = origEntries.call(this);
+          if (!shifts(this)) return yield* it;
+          for (const [k, v] of it) yield [k, k === 'date' ? shiftHttpDate(v) : v];
+        },
+      }.entries,
+      origEntries,
+    );
+    method(HP, 'entries', entries);
+    if (HP[Symbol.iterator] === origEntries) method(HP, Symbol.iterator, entries);
+    method(
+      HP,
+      'values',
+      disguise(
+        {
+          *values() {
+            if (!shifts(this)) return yield* origValues.call(this);
+            for (const [k, v] of origEntries.call(this)) yield k === 'date' ? shiftHttpDate(v) : v;
+          },
+        }.values,
+        origValues,
+      ),
+    );
+    method(
+      HP,
+      'forEach',
+      disguise(
+        {
+          forEach(cb, thisArg) {
+            const shift = shifts(this);
+            return origForEach.call(this, (v, k, h) => cb.call(thisArg, shift && k === 'date' ? shiftHttpDate(v) : v, k, h));
+          },
+        }.forEach,
+        origForEach,
+      ),
+    );
+
     const XHR = XMLHttpRequest.prototype;
     const origGetHeader = XHR.getResponseHeader;
     const origGetAll = XHR.getAllResponseHeaders;
-    XHR.getResponseHeader = disguise(
-      {
-        getResponseHeader(name) {
-          const v = origGetHeader.call(this, name);
-          return isDate(name) ? shiftHttpDate(v) : v;
-        },
-      }.getResponseHeader,
-      origGetHeader,
+    method(
+      XHR,
+      'getResponseHeader',
+      disguise(
+        {
+          getResponseHeader(name) {
+            const v = origGetHeader.call(this, name);
+            return isDate(name) ? shiftHttpDate(v) : v;
+          },
+        }.getResponseHeader,
+        origGetHeader,
+      ),
     );
-    XHR.getAllResponseHeaders = disguise(
-      {
-        getAllResponseHeaders() {
-          const all = origGetAll.call(this);
-          return enabled ? all.replace(/^(date:[ \t]*)(.*)$/im, (_, k, v) => k + shiftHttpDate(v)) : all;
-        },
-      }.getAllResponseHeaders,
-      origGetAll,
+    method(
+      XHR,
+      'getAllResponseHeaders',
+      disguise(
+        {
+          getAllResponseHeaders() {
+            const all = origGetAll.call(this);
+            return enabled && all ? all.replace(/^(date:[ \t]*)(.*)$/im, (_, k, v) => k + shiftHttpDate(v)) : all;
+          },
+        }.getAllResponseHeaders,
+        origGetAll,
+      ),
     );
 
     // --- Temporal.Now (if the browser ships it) ----------------------------
@@ -183,22 +274,29 @@
       const instant = () => T.Instant.fromEpochMilliseconds(Math.floor(now()));
       const zoned = (tz) => instant().toZonedDateTimeISO(tz === undefined ? tzId() : tz);
       const patch = {
-        instant,
-        zonedDateTimeISO: zoned,
-        plainDateTimeISO: (tz) => zoned(tz).toPlainDateTime(),
-        plainDateISO: (tz) => zoned(tz).toPlainDate(),
-        plainTimeISO: (tz) => zoned(tz).toPlainTime(),
+        instant() {
+          return instant();
+        },
+        zonedDateTimeISO(tz) {
+          return zoned(tz);
+        },
+        plainDateTimeISO(tz) {
+          return zoned(tz).toPlainDateTime();
+        },
+        plainDateISO(tz) {
+          return zoned(tz).toPlainDate();
+        },
+        plainTimeISO(tz) {
+          return zoned(tz).toPlainTime();
+        },
       };
       for (const [name, fn] of Object.entries(patch)) {
-        if (typeof T.Now[name] === 'function') {
-          try {
-            Object.defineProperty(T.Now, name, {
-              value: disguise(fn, T.Now[name]),
-              writable: true,
-              configurable: true,
-            });
-          } catch {}
-        }
+        const orig = T.Now[name];
+        if (typeof orig !== 'function') continue;
+        try {
+          Object.defineProperty(fn, 'length', { value: orig.length });
+          method(T.Now, name, disguise(fn, orig));
+        } catch {}
       }
     }
   }

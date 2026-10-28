@@ -75,6 +75,8 @@ input[type='datetime-local'], input[type='number'] {
 .primary { background: var(--accent); color: var(--accent-fg); border: 1px solid var(--accent); }
 .secondary { background: transparent; color: var(--fg); border: 1px solid var(--border); }
 #msg { min-height: 16px; margin-top: 6px; }
+.peel { margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--border); }
+#peelMsg { min-height: 16px; }
 #msg.ok { color: var(--ok); }
 #msg.err { color: var(--err); }
 

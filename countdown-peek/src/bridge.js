@@ -24,7 +24,13 @@
     }
   })();
 
-  const canon = (cfg) => (cfg && cfg.enabled ? JSON.stringify(cfg, Object.keys(cfg).sort()) : null);
+  // The mirror carries the top host it was written for; inject.js ignores
+  // copies written for another host (same-site frames share localStorage).
+  const canon = (cfg) => {
+    if (!cfg || !cfg.enabled) return null;
+    const c = { ...cfg, host: topHost };
+    return JSON.stringify(c, Object.keys(c).sort());
+  };
 
   const readMirror = () => {
     try {
@@ -33,15 +39,25 @@
       return null;
     }
   };
+  const mirrorHost = (json) => {
+    try {
+      return JSON.parse(json).host;
+    } catch {
+      return undefined;
+    }
+  };
 
   // What inject.js in this window applied at document_start. Tracked per
   // window: same-origin frames share localStorage, so the mirror alone can't
   // tell whether this window has seen a change.
-  let applied = readMirror();
+  const initial = readMirror();
+  let applied = initial && mirrorHost(initial) === topHost ? initial : null;
 
   function push(cfg) {
     const next = canon(cfg);
-    if (readMirror() !== next) {
+    const cur = readMirror();
+    // Don't delete a copy that belongs to another top-level host.
+    if (cur !== next && (next || mirrorHost(cur) === topHost)) {
       try {
         if (next) localStorage.setItem(KEY, next);
         else localStorage.removeItem(KEY);

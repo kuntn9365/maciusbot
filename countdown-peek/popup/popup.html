@@ -33,7 +33,7 @@
           <label class="check"><input id="utc" type="checkbox" /> UTC</label>
         </div>
         <div class="chips">
-          <button id="detect" class="chip accent" title="Đọc số Days/Hours/Minutes/Seconds trên trang">Dò countdown</button>
+          <button id="detect" class="chip accent" title="Đọc countdown (05:31:42, Days/Hours/…) hoặc giờ UTC trên trang">Dò countdown</button>
           <button class="chip" data-add="0">Bây giờ</button>
           <button class="chip" data-add="60000">+1 phút</button>
           <button class="chip" data-add="3600000">+1 giờ</button>
@@ -53,7 +53,6 @@
         <p class="hint">Giờ trên trang = giờ thật + khoảng này (có thể nhập số âm).</p>
       </section>
 
-      <label class="check"><input id="freeze" type="checkbox" /> Đóng băng thời gian (không chạy tiếp)</label>
       <label class="check"><input id="reload" type="checkbox" checked /> Tải lại trang sau khi áp dụng</label>
 
       <div class="actions">
@@ -61,6 +60,16 @@
         <button id="disable" class="secondary">Tắt</button>
       </div>
       <div id="msg" class="small"></div>
+
+      <section class="peel">
+        <div class="small muted">Lớp phủ còn che trang (Maintenance, Coming soon…)</div>
+        <div class="chips">
+          <button id="peelAuto" class="chip accent" title="Ẩn lớp phủ ở giữa màn hình và bỏ làm mờ nội dung phía sau">Gỡ lớp phủ</button>
+          <button id="peelZap" class="chip" title="Rê chuột lên trang, bấm vào lớp muốn ẩn, Esc để thoát">Chọn để gỡ…</button>
+          <button id="peelRestore" class="chip">Hoàn tác</button>
+        </div>
+        <div id="peelMsg" class="small muted"></div>
+      </section>
     </main>
 
     <section id="sitesBox">
@@ -68,6 +77,8 @@
       <ul id="sites"></ul>
     </section>
 
+    <script src="../src/registry.js"></script>
+    <script src="peel.js"></script>
     <script src="popup.js"></script>
   </body>
 </html>

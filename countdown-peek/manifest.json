@@ -1,10 +1,16 @@
 {
   "manifest_version": 3,
   "name": "Countdown Peek",
-  "version": "1.0.0",
+  "version": "1.2.0",
   "description": "Xem trước nội dung sau countdown bằng cách giả lập giờ trình duyệt cho từng trang web.",
-  "permissions": ["storage", "scripting", "tabs"],
-  "host_permissions": ["<all_urls>"],
+  "permissions": [
+    "storage",
+    "scripting",
+    "tabs"
+  ],
+  "host_permissions": [
+    "<all_urls>"
+  ],
   "background": {
     "service_worker": "src/background.js"
   },
@@ -24,16 +30,12 @@
   },
   "content_scripts": [
     {
-      "matches": ["<all_urls>"],
-      "js": ["src/inject.js"],
-      "run_at": "document_start",
-      "all_frames": true,
-      "match_about_blank": true,
-      "world": "MAIN"
-    },
-    {
-      "matches": ["<all_urls>"],
-      "js": ["src/bridge.js"],
+      "matches": [
+        "<all_urls>"
+      ],
+      "js": [
+        "src/bridge.js"
+      ],
       "run_at": "document_start",
       "all_frames": true,
       "match_about_blank": true
