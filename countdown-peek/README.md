@@ -19,7 +19,8 @@ Ví dụ với `https://www.hydrex.fi/hydropump`:
    - Kiểu mỗi chữ số một ô (flip clock) và countdown nằm trong shadow DOM / iframe
    - Dòng chữ `opens at 17:00 UTC`, `Launching Monday at 16:00 UTC`, `2026-11-05 17:00 UTC`, `5 PM UTC`, `UTC 17:00` → mốc được làm tròn khớp đúng giờ đó.
    Không dò được thì nhập tay: tick **UTC** rồi nhập đúng giờ trang ghi (ví dụ `17:00:05`).
-2. Bấm **Áp dụng** → trang tự tải lại với giờ giả. Popup kiểm tra lại trang và báo:
+   Site đã bật mà trang vẫn còn countdown (mốc cũ chưa đủ xa) thì popup cũng tự điền mốc mới.
+2. Bấm **Áp dụng** → trang tự tải lại với giờ giả. Bấm ngay lúc popup đang dò cũng được: popup chờ dò xong rồi dùng mốc dò được. Popup kiểm tra lại trang và báo:
    - *Countdown trên trang đã hết* → OK.
    - *Mốc chưa đủ xa* → chọn mốc muộn hơn.
    - *Trang chưa phản ứng* → tải lại trang (khi đã bỏ tick "Tải lại trang").
@@ -27,7 +28,7 @@ Ví dụ với `https://www.hydrex.fi/hydropump`:
    - *Không thấy countdown nào để kiểm tra* → tự xem trang.
 3. Bấm **Tắt** để trang dùng lại giờ thật.
 
-Popup từ chối mốc tự nhập nằm trong ±2 phút quanh giờ thật vì mốc đó không làm trang thay đổi gì (mốc do *Dò countdown* đưa ra thì vẫn nhận).
+Popup từ chối mốc tự nhập nằm trong ±2 phút quanh giờ thật vì mốc đó không làm trang thay đổi gì (mốc do *Dò countdown* đưa ra thì vẫn nhận). Ở chế độ *Nhảy tới mốc*, mốc nằm trước giờ countdown về 0 (đã dò được) cũng bị từ chối và được thay bằng mốc dò được; muốn đặt giờ sớm hơn thì dùng *Cộng thêm*.
 
 ### Gỡ lớp phủ (Maintenance, Coming soon…)
 

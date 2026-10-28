@@ -4,6 +4,10 @@
 
 const KEY = '__countdown_peek__';
 const BUFFER = 2000; // land a little past zero
+// A countdown is read to about a second, and pages that sync from the HTTP
+// Date header run up to 1 s behind. A countdown ending this close after a
+// "17:00 UTC" text still means 17:00.
+const SNAP_SLACK = 1500;
 
 const $ = (id) => document.getElementById(id);
 const pad = (n) => String(n).padStart(2, '0');
@@ -19,6 +23,7 @@ const state = {
   pageNow: null, // { now, at } page's Date.now() sampled at popup time `at`
   lastDetect: null, // { remaining, realAt } last running countdown seen, in real time
   detectedTarget: null, // target produced by detection (exempt from the near-now guard)
+  detected: null, // { end, target } of the last running countdown found by detect(), page clock
   detecting: null, // pending detection promise
   touched: false, // user changed the form; auto-detect must not overwrite it
 };
@@ -412,19 +417,24 @@ function targetFrom(r) {
   if (r.remaining != null) {
     // A countdown without seconds can be up to one unit later than shown.
     const end = r.pageNow + r.remaining + (r.unit > 1e3 ? r.unit : 0);
-    // Snap to "HH:MM UTC" text that agrees with the countdown, but never earlier.
+    // Snap to "HH:MM UTC" text that agrees with the countdown, but never
+    // earlier than the countdown allows (beyond its reading error).
     const hint = r.hints.find((h) => Math.abs(h.at - end) < 90e3);
+    const at = hint && end - hint.at <= SNAP_SLACK ? hint.at : end;
     return {
-      target: (hint ? Math.max(hint.at, end) : end) + BUFFER,
+      end: at,
+      target: at + BUFFER,
       msg: `Countdown còn ${fmtDuration(r.remaining)}${r.live ? '' : ' (không thấy chạy)'}${hint ? ` · khớp "${hint.text}"` : ''}`,
       hint,
     };
   }
   const hint = r.hints[0];
-  return { target: hint.at + BUFFER, msg: `Theo dòng chữ "${hint.text}"`, hint };
+  return { end: hint.at, target: hint.at + BUFFER, msg: `Theo dòng chữ "${hint.text}"`, hint };
 }
 
-function detect({ auto = false, prefill = true } = {}) {
+// prefill: put the detected target in the form. prefillIfLive: do it anyway
+// when the countdown is still running (the stored target wasn't enough).
+function detect({ auto = false, prefill = true, prefillIfLive = false } = {}) {
   $('detectMsg').textContent = 'Đang dò countdown…';
   const job = (async () => {
     let r;
@@ -435,6 +445,7 @@ function detect({ auto = false, prefill = true } = {}) {
       return null;
     }
     if (!r || (r.remaining == null && !r.hints.length)) {
+      state.detected = null;
       $('detectMsg').textContent = !prefill
         ? 'Không thấy countdown trên trang.'
         : auto
@@ -442,15 +453,19 @@ function detect({ auto = false, prefill = true } = {}) {
           : 'Không tìm thấy countdown (dạng 05:31:42 hoặc Days/Hours/Minutes/Seconds) hay giờ "UTC" trên trang.';
       return r;
     }
-    const { target, msg, hint } = targetFrom(r);
+    const { end, target, msg, hint } = targetFrom(r);
+    const running = r.live && r.remaining > 0;
+    state.detected = running ? { end, target } : null;
     // Auto-detect never overwrites what the user already changed.
-    if (prefill && !(auto && state.touched)) {
+    if ((prefill || (prefillIfLive && running)) && !(auto && state.touched)) {
       state.target = target;
       state.detectedTarget = target;
       setMode('absolute');
       if (hint) setUtc(true);
       else renderTarget();
-      $('detectMsg').textContent = `${msg} → mốc ${fmt(target)}`;
+      $('detectMsg').textContent = prefill
+        ? `${msg} → mốc ${fmt(target)}`
+        : `Trang vẫn còn countdown ${fmtDuration(r.remaining)}${hint ? ` (khớp "${hint.text}")` : ''} → đã điền mốc mới ${fmt(target)}, bấm Áp dụng.`;
     } else {
       $('detectMsg').textContent = `${msg} → gợi ý mốc ${fmt(target)} (bấm Dò countdown để dùng)`;
     }
@@ -552,6 +567,12 @@ async function afterChange(cfg) {
 }
 
 async function apply() {
+  // Auto-detect may still be sampling: let it fill the target first (it
+  // leaves the form alone if the user changed it).
+  if (state.detecting) {
+    setMsg('Đang dò countdown…');
+    await state.detecting;
+  }
   const realNow = Date.now();
   const cfg = {
     enabled: true,
@@ -569,6 +590,18 @@ async function apply() {
     if (Math.abs(delta) < 120e3 && cfg.target !== state.detectedTarget) {
       setMsg(
         'Mốc đang gần bằng giờ thật nên trang sẽ không khác gì. Chọn mốc SAU giờ mở (ví dụ trang ghi 17:00 UTC → tick UTC, nhập 17:00:05), hoặc bấm Dò countdown.',
+        'err',
+      );
+      return;
+    }
+    // Both are on the page's clock, which is what "Nhảy tới mốc" sets.
+    const d = state.detected;
+    if (d && cfg.target < d.end) {
+      state.target = d.target;
+      state.detectedTarget = d.target;
+      renderTarget();
+      setMsg(
+        `Mốc này vẫn trước giờ mở (${fmt(d.end)}), trang sẽ vẫn đếm ngược. Đã đổi thành ${fmt(d.target)}, bấm Áp dụng lần nữa.`,
         'err',
       );
       return;
@@ -674,14 +707,9 @@ async function init() {
     }),
   );
   $('detect').addEventListener('click', () => detect());
-  $('apply').addEventListener('click', () => {
-    touch();
-    apply().catch((e) => setMsg(e.message, 'err'));
-  });
-  $('disable').addEventListener('click', () => {
-    touch();
-    disable().catch((e) => setMsg(e.message, 'err'));
-  });
+  // Not a form edit: apply() waits for auto-detect and uses what it fills in.
+  $('apply').addEventListener('click', () => apply().catch((e) => setMsg(e.message, 'err')));
+  $('disable').addEventListener('click', () => disable().catch((e) => setMsg(e.message, 'err')));
   $('peelAuto').addEventListener('click', () => peel('auto'));
   $('peelZap').addEventListener('click', () => peel('zap'));
   $('peelRestore').addEventListener('click', () => peel('restore'));
@@ -689,9 +717,10 @@ async function init() {
   await refreshPageClock();
   setInterval(renderClock, 250);
 
-  // Read the page's countdown: prefill the target when the site isn't enabled
-  // yet; otherwise only report it (and keep it as verify()'s baseline).
-  detect({ auto: true, prefill: !cfg });
+  // Read the page's countdown (also verify()'s baseline) and prefill the
+  // target. On an enabled site only if it still counts down: the stored
+  // target wasn't far enough.
+  detect({ auto: true, prefill: !cfg, prefillIfLive: true });
 }
 
 init().catch((e) => setMsg(e.message, 'err'));

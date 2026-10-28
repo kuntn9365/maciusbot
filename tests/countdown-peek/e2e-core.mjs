@@ -6,7 +6,7 @@ const srv = http.createServer((req, res) => {
   if (!fs.existsSync(p)) { res.writeHead(404); return res.end(); }
   res.writeHead(200, {'content-type':'text/html'}); res.end(fs.readFileSync(p));
 }).listen(8865);
-const ctx = await chromium.launchPersistentContext('', { executablePath: process.env.CHROMIUM,
+const ctx = await chromium.launchPersistentContext('', { executablePath: process.env.CHROMIUM, channel: process.env.CHROMIUM ? undefined : 'chromium',
   headless: true,
   args: [`--disable-extensions-except=${EXT}`, `--load-extension=${EXT}`],
 });

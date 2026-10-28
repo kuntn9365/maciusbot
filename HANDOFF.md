@@ -4,8 +4,8 @@
 
 - Repo `kuntn9365/maciusbot`, branch `claude/peaceful-thompson-7ep1ms`.
 - Lấy code về máy: `git fetch origin && git checkout claude/peaceful-thompson-7ep1ms`.
-- Extension nằm ở thư mục `countdown-peek/`, phiên bản **1.2.1** (commit `0a8cb0f`).
-- Test e2e nằm ở `tests/countdown-peek/`. Lúc bàn giao toàn bộ đều pass: core 23, detect 22, v3 22, peel 37.
+- Extension nằm ở thư mục `countdown-peek/`, phiên bản **1.2.2**.
+- Test e2e nằm ở `tests/countdown-peek/`. Toàn bộ pass (28/10, chạy 3 lượt liền trên Mac): core 23, detect 22, v3 28, peel 37.
 
 | File | Vai trò |
 |---|---|
@@ -16,64 +16,26 @@
 | `countdown-peek/popup/popup.js` | Giao diện chính: dò countdown, áp dụng, `verify()` sau khi áp dụng. |
 | `countdown-peek/popup/peel.js` | `peelPage('auto'\|'zap'\|'restore')`: gỡ lớp phủ maintenance/coming-soon. |
 
-## Bug đang sửa dở: "bản mới còn tệ hơn" (ảnh chụp lúc 12:17 UTC ngày 28/10)
+## Đã sửa trong 1.2.2: popup áp dụng mốc mặc định now+1h thay vì mốc dò được
 
-**Hiện tượng.** Trang hoodora.online vẫn hiện OPENING SOON, còn `03:42:49`, dù popup báo ON.
+Hiện tượng (28/10, hoodora.online): popup báo ON nhưng trang vẫn `03:42:49`. Đồng hồ giả chạy đúng; mốc đã lưu là giá trị mặc định `now+1h`, không phải mốc dò được.
 
-**Đã xác định: đồng hồ giả vẫn chạy đúng.**
-- Giờ thật lúc chụp là 12:17 UTC.
-- Popup báo "Giờ trên trang 20:17:10" (UTC+7), tức 13:17 UTC.
-- 17:00 − 03:42:49 = 13:17:11 UTC, khớp đúng giờ trên trang.
+Đã sửa trong `popup/popup.js`:
 
-Vậy trang đang được cộng đúng +1 giờ. Cái sai nằm ở **mốc đã áp dụng là `20:17:00` local**. Đó là giá trị mặc định `Math.ceil(now/60s)*60s + 1h` (`popup.js` khoảng dòng 648), không phải mốc dò được. Dòng dò countdown vẫn đúng ("còn 3h42m52s · khớp 17:00 UTC → gợi ý mốc 00:00:02 29/10"), nhưng chỉ hiện ra dưới dạng *gợi ý*.
+1. Nút **Áp dụng**/**Tắt** không còn tính là "người dùng sửa form". `apply()` chờ auto-detect xong (`await state.detecting`) rồi mới đọc `state.target`.
+2. Site đã bật mà countdown vẫn chạy: `detect({ prefillIfLive: true })` tự điền mốc mới và báo "Trang vẫn còn countdown … → đã điền mốc mới …, bấm Áp dụng."
+3. `state.detected = { end, target }` (theo đồng hồ trang) lưu từ lần dò gần nhất có countdown đang chạy. Chế độ "Nhảy tới mốc" mà `cfg.target < end` thì chặn, điền lại mốc dò được. Chặn này đứng sau chặn ±2 phút.
+4. `targetFrom()`: khớp dòng chữ "HH:MM UTC" khi countdown kết thúc trễ hơn chữ tối đa `SNAP_SLACK` = 1,5 s. Trước đây `Math.max(hint, end)` làm mốc thành `:03`, vì trang đồng bộ giờ qua header `Date` (chỉ chính xác tới giây) chạy chậm tới 1 s. Test `[fetchdate]` vì thế từng fail ngẫu nhiên.
 
-**Nguyên nhân trong `popup/popup.js`:**
+Test mới trong `e2e-v3.mjs` (12–15): đều FAIL trên code 1.2.1, PASS trên 1.2.2.
+- 12: site đã bật với mốc now+1h, trang còn countdown → popup tự điền giờ mở +2 s; Áp dụng → "đã hết".
+- 13: bấm Áp dụng lúc popup đang dò → lưu mốc dò được, không phải now+1h.
+- 14: tự nhập mốc trước giờ mở → bị chặn, ô mốc thành mốc dò được, chưa lưu gì; bấm lần nữa → "đã hết".
+- 15: unit test `targetFrom` (trễ 0,8/1,2/1,5/3 s, countdown theo phút).
 
-1. Nút **Áp dụng** gọi `touch()` (khoảng dòng 677–680). Nếu bấm lúc auto-detect đang lấy mẫu (~1,5 giây), `detect()` thấy `state.touched` nên không điền mốc. `apply()` đọc `state.target` ngay lúc bấm, nên lấy luôn giá trị mặc định +1h.
-2. Site đã bật thì `init()` gọi `detect({ auto: true, prefill: !cfg })` (dòng 694), tức `prefill: false`. Mốc dò được chỉ hiện chữ "gợi ý … (bấm Dò countdown để dùng)". Nếu trang vẫn còn countdown thì mốc đang lưu rõ ràng không đủ, nhưng popup vẫn giữ nó.
-3. Không có chốt chặn cho mốc nằm **trước** giờ mở đã dò được. Chốt hiện tại chỉ chặn mốc trong khoảng ±2 phút quanh giờ thật.
-
-**Cách sửa đã lên kế hoạch (chưa code):**
-
-```js
-// (1) init(): nút Áp dụng/Tắt không tính là "người dùng sửa form"
-$('apply').addEventListener('click', () => apply().catch((e) => setMsg(e.message, 'err')));
-$('disable').addEventListener('click', () => disable().catch((e) => setMsg(e.message, 'err')));
-
-// (1b) apply(): chờ auto-detect xong TRƯỚC khi đọc state.target
-async function apply() {
-  if (state.detecting) {
-    setMsg('Đang dò countdown…');
-    await state.detecting; // detect() sẽ điền mốc nếu người dùng chưa sửa gì
-  }
-  const realNow = Date.now();
-  const cfg = { ... };
-  ...
-}
-
-// (2) detect(): điền mốc kể cả khi site đã bật, miễn là countdown vẫn đang chạy
-// (còn chạy = mốc đang lưu không đủ). Gọi từ init(): detect({ auto: true, prefill: !cfg, prefillIfLive: true })
-const canFill = (prefill || (prefillIfLive && r.live && r.remaining > 0)) && !(auto && state.touched);
-// Thông báo khi site đã bật:
-// `Trang vẫn còn countdown ${fmtDuration(r.remaining)} → đã điền mốc mới ${fmt(target)}, bấm Áp dụng`
-
-// (3) apply(): lưu giờ mở dò được (state.detectedEnd = end, set trong targetFrom/detect).
-// Chế độ "Nhảy tới mốc" mà cfg.target < state.detectedEnd thì chặn lại và tự điền mốc dò được:
-if (cfg.mode === 'absolute' && state.detectedEnd && cfg.target < state.detectedEnd) {
-  state.target = state.detectedTarget;
-  setUtc(state.utc);
-  setMsg(`Mốc này vẫn trước giờ mở (${fmt(state.detectedEnd)}), trang sẽ vẫn đếm ngược. Đã đổi thành ${fmt(state.target)}, bấm Áp dụng lần nữa.`, 'err');
-  return;
-}
-```
-
-Lưu ý: `state.detectedEnd`/`detectedTarget` là giờ **theo đồng hồ của trang**, tính bằng `pageNow + remaining`. So với `cfg.target` trong chế độ "Nhảy tới mốc" là đúng, vì mốc đặt chính là đồng hồ trang. Chế độ "Cộng thêm" thì bỏ qua chốt này.
-
-**Test cần thêm vào `tests/countdown-peek/e2e-v3.mjs`:**
-- Site đã bật với mốc cũ, ví dụ now+1h, trang `hoodora.html?t=now+5h31m` vẫn còn countdown. Mở popup → ô mốc phải tự đổi sang giờ mở +2s. Bấm Áp dụng → "Countdown trên trang đã hết".
-- Site chưa bật, bấm Áp dụng ngay khi popup vừa mở (đang dò) → phải dùng mốc dò được, không dùng now+1h.
-- Tự nhập mốc trước giờ mở → bị chặn và ô mốc được thay bằng mốc dò được.
-- Chạy lại cả 4 file test, không được có FAIL nào.
+Sửa harness:
+- Playwright 1.64.1 (bản mà `^1.56.1` cài ra ngày 28/10) dùng `chromium-headless-shell` khi `headless: true`, mà bản đó không nạp extension (đã thử: chờ service worker quá 30 s). Các file e2e giờ dùng `channel: 'chromium'` (trừ khi đặt `CHROMIUM`).
+- `clearSites()` của `e2e-detect.mjs` không gọi `syncInjectRegistration()`. Vì vậy `inject.js` vẫn đăng ký, và lần tải đầu đọc mirror `localStorage` của test trước (đã đo: lệch +24 h ở lần tải đầu). Đó là nguyên nhân `[xhrdate] baseline gated` fail chập chờn.
 
 ## Chạy test
 
@@ -106,4 +68,5 @@ npm test                     # chạy e2e-core, e2e-detect, e2e-v3, peel
 - Iframe khác host với trang chính không được đổi giờ, do `inject.js` chỉ đăng ký theo host của frame.
 - Nhãn countdown vẽ bằng CSS `::after` không đọc được. Khi đó `verify()` sẽ báo "Không thấy countdown nào để kiểm tra".
 - Gỡ lớp phủ không tự áp dụng lại sau khi tải lại trang. Có thể thêm tuỳ chọn tự gỡ cho từng site (`cfg.peel`), nhưng cần chuyển `peel.js` thành content script.
-- Toàn bộ kết quả review đối kháng (3 hướng: page patch, dò countdown, popup) đã sửa xong trong 1.2/1.2.1. Lỗi duy nhất còn lại là bug ở trên.
+- Mirror `localStorage` theo origin, còn cấu hình theo hostname. Hai origin cùng host (http/https, khác cổng) có thể giữ bản sao cũ, nên lần tải đầu trên origin kia chạy theo cấu hình cũ cho tới khi `bridge.js` cập nhật. Popup luôn đẩy cấu hình vào tab đang mở nên đường dùng thường không gặp. (Suy ra từ code, chưa dựng test.)
+- Site gọi giờ từ server/API vẫn bị popup tự điền mốc mới mỗi lần mở (countdown vẫn chạy). Bấm Áp dụng thì `verify()` báo đúng "server/API".

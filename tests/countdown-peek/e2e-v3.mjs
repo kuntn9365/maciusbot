@@ -9,7 +9,7 @@ const srv = http.createServer((req, res) => {
   if (!fs.existsSync(p)) { res.writeHead(404); return res.end(); }
   res.writeHead(200, { 'content-type': 'text/html' }); res.end(fs.readFileSync(p));
 }).listen(PORT);
-const ctx = await chromium.launchPersistentContext('', { executablePath: process.env.CHROMIUM, headless: true, viewport: { width: 1280, height: 800 },
+const ctx = await chromium.launchPersistentContext('', { executablePath: process.env.CHROMIUM, channel: process.env.CHROMIUM ? undefined : 'chromium', headless: true, viewport: { width: 1280, height: 800 },
   args: [`--disable-extensions-except=${EXT}`, `--load-extension=${EXT}`] });
 let [sw] = ctx.serviceWorkers(); if (!sw) sw = await ctx.waitForEvent('serviceworker');
 const extId = sw.url().split('/')[2];
@@ -176,6 +176,90 @@ for (const pre of [false, true]) {
   const msg = await popup.textContent('#msg'); console.log('   ', msg);
   ok(/server\/API/.test(msg) && /y như cũ/.test(msg), `[apply during auto-detect, preEnabled=${pre}] reports server/API time`);
   await popup.close(); await page.close();
+}
+
+// Opening time on a whole minute, so the page's "opens at HH:MM UTC" text matches it exactly.
+const opening = () => Math.ceil(Date.now() / 6e4) * 6e4 + 5 * 3600e3 + 31 * 60e3;
+const utcIn = (ms) => new Date(ms).toISOString().slice(0, 19);
+const storedTarget = () => sw.evaluate(async () => { const { sites = {} } = await chrome.storage.local.get('sites'); return sites.localhost ? sites.localhost.target : null; });
+const DONE = /đã hết|Trang vẫn|chưa phản ứng|Không thấy|trước giờ mở|gần bằng/;
+
+// 12: site enabled with a target that is too early: the popup refills the detected one
+{
+  await clearSites();
+  const T = opening();
+  await sw.evaluate(async (t) => { await chrome.storage.local.set({ sites: { localhost: { enabled: true, mode: 'absolute', target: t, updatedAt: 1 } } }); await syncInjectRegistration(); }, Date.now() + 3600e3);
+  const page = await ctx.newPage(); page.on('pageerror', (e) => errors.push('stale: ' + e.message));
+  await page.goto(`http://localhost:${PORT}/hoodora.html?t=${T}`);
+  await page.waitForTimeout(500);
+  // The config was written straight to storage, so this first load may run on
+  // an older test's localStorage mirror. bridge.js has rewritten it by now;
+  // reload, as on a page the user had already loaded with this target.
+  const firstLoadUnlocked = await page.isVisible('#secret');
+  await page.reload(); await page.waitForTimeout(500);
+  const gated = await page.isHidden('#secret');
+  const popup = await openPopup(`http://localhost:${PORT}/hoodora.html*`);
+  await waitText(popup, '#detectMsg', /mốc|Không thấy/);
+  const dm = await popup.textContent('#detectMsg'); const input = await popup.inputValue('#target');
+  console.log('   first load unlocked:', firstLoadUnlocked, '| gated after reload:', gated, '|', dm, '| input:', input);
+  ok(gated && /đã điền mốc mới/.test(dm) && input === utcIn(T + 2000) && await popup.isChecked('#utc'), `[stale target] popup refills ${utcIn(T + 2000)} UTC`);
+  await popup.click('#apply'); await waitText(popup, '#msg', DONE, 30000);
+  const msg = await popup.textContent('#msg'); console.log('   ', msg);
+  ok(/đã hết/.test(msg) && (await storedTarget()) === T + 2000 && await page.isVisible('#secret'), '[stale target] apply stores it and unlocks the page');
+  await popup.close(); await page.close();
+}
+
+// 13: Apply clicked while auto-detect is still sampling, site not enabled yet
+{
+  await clearSites();
+  const T = opening();
+  const page = await ctx.newPage(); page.on('pageerror', (e) => errors.push('early-apply: ' + e.message));
+  await page.goto(`http://localhost:${PORT}/hoodora.html?t=${T}`);
+  await page.waitForTimeout(500);
+  const popup = await openPopup(`http://localhost:${PORT}/hoodora.html*`);
+  await waitText(popup, '#detectMsg', /Đang dò/);
+  const before = await popup.inputValue('#target');
+  const sampling = await popup.evaluate(() => !!state.detecting);
+  await popup.click('#apply'); await waitText(popup, '#msg', DONE, 30000);
+  const msg = await popup.textContent('#msg'); const saved = await storedTarget();
+  console.log('   input at click:', before, '| saved:', saved && utcIn(saved), '|', msg);
+  ok(sampling && saved === T + 2000 && /đã hết/.test(msg) && await page.isVisible('#secret'), '[apply while detecting] uses the detected target, not the now+1h default');
+  await popup.close(); await page.close();
+}
+
+// 14: a typed target before the opening time is refused and replaced by the detected one
+{
+  await clearSites();
+  const T = opening();
+  const page = await ctx.newPage(); page.on('pageerror', (e) => errors.push('early-target: ' + e.message));
+  await page.goto(`http://localhost:${PORT}/hoodora.html?t=${T}`);
+  await page.waitForTimeout(500);
+  const popup = await openPopup(`http://localhost:${PORT}/hoodora.html*`);
+  await waitText(popup, '#detectMsg', /mốc/);
+  const utc = await popup.isChecked('#utc');
+  await popup.fill('#target', utcIn(T - 30 * 60e3 + 5e3));
+  await popup.dispatchEvent('#target', 'change');
+  await popup.click('#apply'); await waitText(popup, '#msg', DONE);
+  const msg = await popup.textContent('#msg'); const input = await popup.inputValue('#target'); const saved = await storedTarget();
+  console.log('   ', msg, '| input:', input);
+  ok(utc && /trước giờ mở/.test(msg) && input === utcIn(T + 2000) && saved === null, '[early target] refused, input replaced by the detected target, nothing saved');
+  await popup.click('#apply'); await waitText(popup, '#msg', /đã hết|Trang vẫn|chưa phản ứng|Không thấy/, 30000);
+  const msg2 = await popup.textContent('#msg'); console.log('   ', msg2);
+  ok(/đã hết/.test(msg2) && (await storedTarget()) === T + 2000 && await page.isVisible('#secret'), '[early target] second apply unlocks');
+  await popup.close(); await page.close();
+}
+
+// 15: snapping to the "HH:MM UTC" text absorbs the countdown's ~1 s reading error, nothing more
+{
+  const popup = await openPopup(`http://localhost:${PORT}/nothing*`);
+  const r = await popup.evaluate(() => {
+    const X = Date.UTC(2026, 10, 5, 17, 0);
+    const t = (lo, unit = 1e3) => targetFrom({ pageNow: lo - 3600e3, remaining: 3600e3, unit, live: true, hints: [{ at: X, text: '17:00 UTC' }] }).target - X;
+    return { before: t(X - 800), after1200: t(X + 1200), after1500: t(X + 1500), after3000: t(X + 3000), minutes: t(X - 30e3, 6e4) };
+  });
+  console.log('   ', JSON.stringify(r));
+  ok(r.before === 2000 && r.after1200 === 2000 && r.after1500 === 2000 && r.after3000 === 5000 && r.minutes === 32000, 'snap: text time within 1.5 s, countdown end otherwise');
+  await popup.close();
 }
 
 ok(errors.length === 0, 'no page errors ' + JSON.stringify(errors));

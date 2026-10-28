@@ -10,13 +10,13 @@ const srv = http.createServer((req, res) => {
   if (!fs.existsSync(p)) { res.writeHead(404); return res.end(); }
   res.writeHead(200, { 'content-type': 'text/html' }); res.end(fs.readFileSync(p));
 }).listen(PORT);
-const ctx = await chromium.launchPersistentContext('', { executablePath: process.env.CHROMIUM, headless: true,
+const ctx = await chromium.launchPersistentContext('', { executablePath: process.env.CHROMIUM, channel: process.env.CHROMIUM ? undefined : 'chromium', headless: true,
   args: [`--disable-extensions-except=${EXT}`, `--load-extension=${EXT}`] });
 let [sw] = ctx.serviceWorkers(); if (!sw) sw = await ctx.waitForEvent('serviceworker');
 const extId = sw.url().split('/')[2];
 const errors = [];
 const ok = (c, m) => { console.log((c ? 'PASS ' : 'FAIL ') + m); if (!c) process.exitCode = 1; };
-const clearSites = () => sw.evaluate(() => chrome.storage.local.set({ sites: {} }));
+const clearSites = () => sw.evaluate(async () => { await chrome.storage.local.set({ sites: {} }); await syncInjectRegistration(); });
 
 async function openPopup(urlGlob) {
   const popup = await ctx.newPage();
