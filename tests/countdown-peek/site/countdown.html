@@ -1,0 +1,22 @@
+<!doctype html><html><head><meta charset="utf-8"><title>CD</title>
+<script>
+  // Inline head script: runs before body; must already see fake time on reload.
+  window.__early = Date.now();
+</script></head><body>
+<div id="card">
+  <h2>HydropUmp</h2><p>Launching soon</p>
+  <div id="cd"></div>
+</div>
+<div id="secret" style="display:none">SECRET CONTENT</div>
+<iframe id="fr" src="/frame.html"></iframe>
+<script>
+  const target = Number(new URLSearchParams(location.search).get('t'));
+  function tick() {
+    const left = target - Date.now();
+    if (left <= 0) { document.getElementById('card').style.display='none'; document.getElementById('secret').style.display='block'; return; }
+    let s = Math.floor(left/1000);
+    const d = Math.floor(s/86400); s%=86400; const h=Math.floor(s/3600); s%=3600; const m=Math.floor(s/60); s%=60;
+    document.getElementById('cd').innerHTML = [[d,'Days'],[h,'Hours'],[m,'Minutes'],[s,'Seconds']].map(([v,l])=>`<div><div>${String(v).padStart(2,'0')}</div><div>${l}</div></div>`).join('');
+  }
+  tick(); setInterval(tick, 200);
+</script></body></html>

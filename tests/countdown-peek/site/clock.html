@@ -1,0 +1,2 @@
+<!doctype html><html><body><h1>Just a clock</h1><div id="c"></div><div>Volume 24h: 5m</div>
+<script>const p=(n)=>String(n).padStart(2,'0');setInterval(()=>{const d=new Date();document.getElementById('c').textContent=`${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`},200)</script></body></html>

@@ -1,0 +1,31 @@
+<!doctype html><html><head><meta charset="utf-8"><title>Maint</title>
+<style>
+  body { margin: 0; background: #111; color: #eee; font-family: sans-serif; overflow: hidden; }
+  header { position: fixed; top: 0; left: 0; right: 0; height: 50px; background: #222; z-index: 5; }
+  #app { padding: 80px 40px; filter: blur(6px); opacity: .5; pointer-events: none; user-select: none; }
+  #app h1 { font-size: 80px; }
+  .backdrop { position: fixed; inset: 0; background: rgba(0,0,0,.6); backdrop-filter: blur(4px); z-index: 50; display: flex; align-items: center; justify-content: center; }
+  .modal { width: 600px; padding: 30px; background: #2a2010; border: 2px solid gold; border-radius: 16px; text-align: center; }
+  .layout2 .modal2 { position: fixed; top: 50%; left: 50%; transform: translate(-50%,-50%); width: 500px; padding: 20px; background: #333; z-index: 60; }
+  .layout2 .bd2 { position: fixed; inset: 0; background: rgba(0,0,0,.7); z-index: 55; }
+</style></head><body>
+<header>HEADER NAV</header>
+<div id="app"><h1>REALM</h1><button id="play" onclick="document.title='clicked'">PLAY</button><p>Lots of game content here.</p>
+<ul></ul></div>
+<div id="layer"></div>
+<script>
+  const q = new URLSearchParams(location.search);
+  const ul = document.querySelector('#app ul'); for (let i = 0; i < 200; i++) { const li = document.createElement('li'); li.textContent = 'item ' + i; ul.append(li); }
+  const layer = document.getElementById('layer');
+  function render() {
+    if (q.get('layout') === '2') {
+      layer.className = 'layout2';
+      layer.innerHTML = '<div class="bd2"></div><div class="modal2"><h2>MAINTENANCE</h2><p>Back shortly.</p></div>';
+    } else {
+      layer.innerHTML = '<div class="backdrop"><div class="modal"><h2>MAINTENANCE</h2><p>Hoodora is being updated.</p></div></div>';
+    }
+  }
+  render();
+  // Simulate a framework re-rendering the gate every 2s (remounts nodes).
+  if (q.get('rerender')) setInterval(render, 2000);
+</script></body></html>

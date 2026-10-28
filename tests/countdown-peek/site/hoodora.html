@@ -1,0 +1,39 @@
+<!doctype html><html><head><meta charset="utf-8"><title>Hoodora</title></head><body>
+<div id="gate"><div>OPENING SOON</div><p>Hoodora opens at <span id="utc"></span> UTC.</p>
+<div id="cd" style="font-size:40px"><span id="h"></span><span>:</span><span id="m"></span><span>:</span><span id="s"></span></div></div>
+<div>Local clock: <span id="clock"></span></div>
+<div id="secret" hidden>SECRET CONTENT</div>
+<script>
+const q = new URLSearchParams(location.search);
+const target = Number(q.get('t'));
+const mode = q.get('mode') || 'client';
+let offset = 0;
+document.getElementById('utc').textContent = new Date(target).toISOString().slice(11, 16);
+const p = (n) => String(n).padStart(2, '0');
+function tick() {
+  const now = Date.now() + offset;
+  const c = new Date(now);
+  document.getElementById('clock').textContent = `${p(c.getHours())}:${p(c.getMinutes())}:${p(c.getSeconds())}`;
+  const left = target - now;
+  if (left <= 0) { document.getElementById('gate').hidden = true; document.getElementById('secret').hidden = false; return; }
+  let s = Math.floor(left / 1000);
+  document.getElementById('h').textContent = p(Math.floor(s / 3600));
+  document.getElementById('m').textContent = p(Math.floor((s % 3600) / 60));
+  document.getElementById('s').textContent = p(s % 60);
+}
+async function start() {
+  if (mode === 'fetchdate') {
+    const r = await fetch('/ping', { method: 'HEAD', cache: 'no-store' });
+    offset = Date.parse(r.headers.get('date')) - Date.now();
+  } else if (mode === 'xhrdate') {
+    await new Promise((res) => { const x = new XMLHttpRequest(); x.open('HEAD', '/ping'); x.onload = () => {
+      const line = x.getAllResponseHeaders().split('\r\n').find((l) => /^date:/i.test(l));
+      offset = Date.parse(line.slice(5).trim()) - Date.now(); res(); }; x.send(); });
+  } else if (mode === 'api') {
+    const j = await (await fetch('/api/time', { cache: 'no-store' })).json();
+    offset = j.now - Date.now();
+  }
+  tick(); setInterval(tick, 200);
+}
+start();
+</script></body></html>

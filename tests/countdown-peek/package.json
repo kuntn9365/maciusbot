@@ -1,0 +1,11 @@
+{
+  "name": "countdown-peek-tests",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node e2e-core.mjs && node e2e-detect.mjs && node e2e-v3.mjs && node peel.mjs"
+  },
+  "devDependencies": {
+    "playwright": "^1.56.1"
+  }
+}

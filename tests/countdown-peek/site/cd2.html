@@ -1,0 +1,26 @@
+<!doctype html><html><head><meta charset="utf-8"><title>cd2</title>
+<style>.flex{display:flex;gap:4px}.flex div{padding:4px;border:1px solid #888}</style></head><body>
+<h1>Season 3</h1>
+<div id="box"></div>
+<div id="secret" hidden>SECRET CONTENT</div>
+<script>
+const q = new URLSearchParams(location.search);
+const target = Number(q.get('t')); const fmt = q.get('fmt');
+const p = (n) => String(n).padStart(2, '0');
+let left0 = target - Date.now(); const t0 = Date.now(); let ticks = 0;
+class CdBox extends HTMLElement { constructor() { super(); this.attachShadow({ mode: 'open' }).innerHTML = '<span id="v"></span>'; } }
+customElements.define('cd-box', CdBox);
+if (fmt === 'shadow') document.getElementById('box').innerHTML = 'Shop <cd-box></cd-box>';
+function render() {
+  const left = fmt === 'decr' ? left0 - ticks * 1000 : target - Date.now();
+  if (left <= 0) { document.getElementById('box').hidden = true; document.getElementById('secret').hidden = false; return; }
+  let s = Math.floor(left / 1000); const d = Math.floor(s / 86400); s %= 86400;
+  const hh = p(Math.floor(s / 3600)), mm = p(Math.floor((s % 3600) / 60)), ss = p(s % 60);
+  const box = document.getElementById('box');
+  if (fmt === 'days') box.textContent = `Ends in ${d} days ${hh}:${mm}:${ss}`;
+  else if (fmt === 'flex') box.innerHTML = '<div class="flex">' + `${hh}:${mm}:${ss}`.split('').map((c) => `<div>${c}</div>`).join('') + '</div>';
+  else if (fmt === 'shadow') box.querySelector('cd-box').shadowRoot.getElementById('v').textContent = `${hh}:${mm}:${ss}`;
+  else box.textContent = `${hh}:${mm}:${ss}`;
+}
+render(); setInterval(() => { ticks++; render(); }, 1000);
+</script></body></html>
