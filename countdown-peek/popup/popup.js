@@ -507,21 +507,29 @@ async function verify(cfg, before, reloaded) {
       `Trang vẫn đếm ngược y như cũ (còn ${left}). Trang này lấy giờ từ server/API (hoặc nguồn ngoài trình duyệt), extension không qua được.`,
       'err',
     );
+  } else if (!before) {
+    setMsg(
+      `Trang vẫn còn ${left}. Mốc chưa đủ xa, hoặc trang lấy giờ từ server/API — bấm Dò countdown rồi Áp dụng lại để biết chắc.`,
+      'err',
+    );
   } else {
     setMsg(`Trang vẫn còn ${left}. Mốc chưa đủ xa — hãy chọn mốc muộn hơn (hoặc bấm Dò countdown rồi Áp dụng).`, 'err');
   }
 }
 
+// Baseline for verify(). Must run before the new config is stored: bridge.js
+// pushes it into the page on storage.onChanged, and a sample taken across
+// that clock jump doesn't look like a running countdown.
+async function takeBaseline() {
+  if (state.detecting) await state.detecting;
+  if (!state.lastDetect) {
+    setMsg('Đang đọc countdown hiện tại…');
+    await runDetect(1500).catch(() => null);
+  }
+}
+
 async function afterChange(cfg) {
   const reload = $('reload').checked;
-  // Baseline for verify(): reuse a running detection, else take one now.
-  if (cfg) {
-    if (state.detecting) await state.detecting;
-    if (!state.lastDetect) {
-      setMsg('Đang đọc countdown hiện tại…');
-      await runDetect(1500).catch(() => null);
-    }
-  }
   const before = state.lastDetect;
   const { prefs = {} } = await chrome.storage.local.get('prefs');
   await chrome.storage.local.set({ prefs: { ...prefs, reload } });
@@ -569,6 +577,7 @@ async function apply() {
     setMsg('Khoảng cộng thêm đang là 0.', 'err');
     return;
   }
+  await takeBaseline();
   state.sites[state.host] = cfg;
   await chrome.storage.local.set({ sites: state.sites });
   setMsg(`Đã bật: ${describe(cfg)}`, 'ok');
