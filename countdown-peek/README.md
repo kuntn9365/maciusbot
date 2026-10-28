@@ -13,11 +13,18 @@ Extension Chrome (Manifest V3) giả lập giờ trình duyệt **cho từng web
 
 Ví dụ với `https://www.hydrex.fi/hydropump`:
 
-1. Mở trang, bấm icon extension.
-2. Bấm **Dò countdown**: extension đọc số `Days / Hours / Minutes / Seconds` trên trang và điền mốc = lúc countdown về 0 (+2 giây).
-   Hoặc nhập mốc bằng tay (tick **UTC** để nhập đúng giờ như trang ghi, ví dụ `16:00 UTC`).
-3. Bấm **Áp dụng** → trang tự tải lại với giờ giả, countdown hết và nội dung hiện ra.
-4. Bấm **Tắt** để trang dùng lại giờ thật.
+1. Mở trang, bấm icon extension. Popup **tự dò countdown** và điền sẵn mốc = lúc countdown về 0 (+2 giây). Nhận được:
+   - `05:31:42`, `2:05:31:42`, `31:42` (chỉ lấy số đang giảm dần, nên đồng hồ thường không bị nhận nhầm)
+   - `02 Days 05 Hours 31 Minutes 42 Seconds`, `5d 3h 31m 42s`, `Ngày / Giờ / Phút / Giây`
+   - Dòng chữ `opens at 17:00 UTC`, `Launching Monday at 16:00 UTC` → mốc được làm tròn khớp đúng giờ đó.
+   Không dò được thì nhập tay: tick **UTC** rồi nhập đúng giờ trang ghi (ví dụ `17:00:05`).
+2. Bấm **Áp dụng** → trang tự tải lại với giờ giả. Popup kiểm tra lại trang và báo:
+   - *Countdown trên trang đã hết* → OK.
+   - *Mốc chưa đủ xa* → chọn mốc muộn hơn.
+   - *Trang vẫn đếm ngược y như cũ* → trang lấy giờ từ server/API, extension không qua được.
+3. Bấm **Tắt** để trang dùng lại giờ thật.
+
+Popup từ chối mốc nằm trong ±2 phút quanh giờ thật vì mốc đó không làm trang thay đổi gì.
 
 Các chế độ:
 
@@ -29,7 +36,7 @@ Icon hiện badge `ON` ở tab đang dùng giờ giả. Danh sách **Site đang 
 
 ## Cách hoạt động
 
-- `src/inject.js` chạy trong MAIN world của trang tại `document_start` (trước mọi script của trang) và thay `Date`, `Date.now()`, `Intl.DateTimeFormat#format/formatToParts` (khi gọi không có tham số) và `Temporal.Now` (nếu trình duyệt có). Các hàm bị thay vẫn trả về `[native code]` khi `toString()`.
+- `src/inject.js` chạy trong MAIN world của trang tại `document_start` (trước mọi script của trang) và thay `Date`, `Date.now()`, `Intl.DateTimeFormat#format/formatToParts` (khi gọi không có tham số), `performance.timeOrigin`, `Temporal.Now` (nếu trình duyệt có), và header HTTP `Date` đọc qua `fetch` (`Headers#get`) / `XMLHttpRequest` (trang hay dùng header này để đồng bộ giờ server). Các hàm bị thay vẫn trả về `[native code]` khi `toString()`.
 - Cấu hình lưu trong `chrome.storage.local` theo hostname, được `src/bridge.js` mirror sang `localStorage` của trang để `inject.js` đọc đồng bộ ngay từ lần gọi `Date` đầu tiên. Đổi cấu hình khi trang đang mở cũng cập nhật live (không cần reload), nhưng nên reload vì nhiều app chỉ kiểm tra "đã launch chưa" lúc mount.
 - Iframe theo cấu hình của trang cha.
 
@@ -37,6 +44,6 @@ Icon hiện badge `ON` ở tab đang dùng giờ giả. Danh sách **Site đang 
 
 Chỉ đánh lừa được countdown **tính ở phía trình duyệt** (đúng như trường hợp chỉnh giờ máy Mac xem được). Không có tác dụng nếu:
 
-- Server tự trả thời gian / chỉ trả nội dung sau giờ launch (API, SSR có kiểm tra giờ).
+- Server trả giờ trong nội dung API (JSON `serverTime`…) hoặc chỉ trả nội dung sau giờ launch (API, SSR có kiểm tra giờ). Header `Date` thì đã được xử lý.
 - Trang lấy giờ từ Web Worker hoặc từ API bên ngoài (worldtimeapi, block timestamp on-chain…).
 - Contract/on-chain chưa mở: xem được giao diện nhưng giao dịch vẫn bị từ chối.

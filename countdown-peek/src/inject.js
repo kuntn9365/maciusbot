@@ -121,6 +121,61 @@
       );
     }
 
+    // --- performance.timeOrigin (timeOrigin + performance.now() as "now") ---
+    const originDesc = Object.getOwnPropertyDescriptor(Performance.prototype, 'timeOrigin');
+    if (originDesc && originDesc.get) {
+      const origOrigin = originDesc.get;
+      const getter = Object.getOwnPropertyDescriptor(
+        {
+          get timeOrigin() {
+            const v = origOrigin.call(this);
+            return enabled ? v + (startFake - startReal) : v;
+          },
+        },
+        'timeOrigin',
+      ).get;
+      Object.defineProperty(Performance.prototype, 'timeOrigin', { ...originDesc, get: disguise(getter, origOrigin) });
+    }
+
+    // --- Server time read from the HTTP "Date" response header -------------
+    const shiftHttpDate = (v) => {
+      if (!enabled || v == null) return v;
+      const t = NativeDate.parse(v);
+      return Number.isNaN(t) ? v : new NativeDate(t + (now() - nativeNow())).toUTCString();
+    };
+    const isDate = (name) => String(name).toLowerCase() === 'date';
+    const origHeadersGet = Headers.prototype.get;
+    Headers.prototype.get = disguise(
+      {
+        get(name) {
+          const v = origHeadersGet.call(this, name);
+          return isDate(name) ? shiftHttpDate(v) : v;
+        },
+      }.get,
+      origHeadersGet,
+    );
+    const XHR = XMLHttpRequest.prototype;
+    const origGetHeader = XHR.getResponseHeader;
+    const origGetAll = XHR.getAllResponseHeaders;
+    XHR.getResponseHeader = disguise(
+      {
+        getResponseHeader(name) {
+          const v = origGetHeader.call(this, name);
+          return isDate(name) ? shiftHttpDate(v) : v;
+        },
+      }.getResponseHeader,
+      origGetHeader,
+    );
+    XHR.getAllResponseHeaders = disguise(
+      {
+        getAllResponseHeaders() {
+          const all = origGetAll.call(this);
+          return enabled ? all.replace(/^(date:[ \t]*)(.*)$/im, (_, k, v) => k + shiftHttpDate(v)) : all;
+        },
+      }.getAllResponseHeaders,
+      origGetAll,
+    );
+
     // --- Temporal.Now (if the browser ships it) ----------------------------
     const T = globalThis.Temporal;
     if (T && T.Now && T.Instant) {
